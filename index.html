@@ -153,18 +153,19 @@
         return next;
       };
 
-      const normalizeCredentialProfile = (rawProfile, index, usedIds) => {
-        const profile = asObject(rawProfile);
-        const id = uniqueId(asString(profile.id, `identity-${index + 1}`), usedIds);
-        return {
-          ...profile,
-          id,
-          name: asString(profile.name, profile.username || `Identity ${index + 1}`),
-          username: asString(profile.username, ''),
-          createdAt: asNumber(profile.createdAt, Date.now()),
-          updatedAt: asNumber(profile.updatedAt, Date.now())
-        };
-      };
+const normalizeCredentialProfile = (rawProfile, index, usedIds) => {
+         const profile = asObject(rawProfile);
+         const id = uniqueId(asString(profile.id, `identity-${index + 1}`), usedIds);
+         return {
+           ...profile,
+           id,
+           name: asString(profile.name, profile.username || `Identity ${index + 1}`),
+           username: asString(profile.username, ''),
+           domain: asString(profile.domain, ''),
+           createdAt: asNumber(profile.createdAt, Date.now()),
+           updatedAt: asNumber(profile.updatedAt, Date.now())
+         };
+       };
 
       const normalizeFolder = (rawFolder, index, usedIds) => {
         const folder = asObject(rawFolder);
@@ -336,33 +337,35 @@
         const [status, setStatus] = useState('idle');
         const [showMenu, setShowMenu] = useState(false);
 
-        const handleConnect = () => {
-          setStatus('connecting');
-          const win = window;
-          if (win.pywebview && win.pywebview.api) {
-            let user = connection.username;
-            let pass = connection.password;
-            
-            if (connection.identityId) {
-              const iden = identities.find(i => i.id === connection.identityId);
-              if (iden) {
-                user = iden.username;
-                pass = iden.password;
-              }
-            }
+const handleConnect = () => {
+           setStatus('connecting');
+           const win = window;
+           if (win.pywebview && win.pywebview.api) {
+             let user = connection.username;
+             let pass = connection.password;
+             let dom = connection.domain;
+             
+             if (connection.identityId) {
+               const iden = identities.find(i => i.id === connection.identityId);
+               if (iden) {
+                 user = iden.username;
+                 pass = iden.password;
+                 dom = iden.domain || dom;
+               }
+             }
 
-            if (connection.type === 'RDP') {
-              win.pywebview.api.launch_rdp(connection.host, user || 'Admin', pass || '');
-            } else {
-              win.pywebview.api.toggle_vpn(connection.protocol, connection.host, false, !!connection.sso);
-            }
-          }
-          setTimeout(() => {
-            setStatus('connected');
-            onUpdate(connection.id, { lastConnected: Date.now() });
-            setTimeout(() => setStatus('idle'), 3000);
-          }, 1500);
-        };
+             if (connection.type === 'RDP') {
+                win.pywebview.api.launch_rdp(connection.host, user || 'Admin', pass || '', dom || '', connection.port || '3389');
+              } else {
+               win.pywebview.api.toggle_vpn(connection.protocol, connection.host, false, !!connection.sso);
+             }
+           }
+           setTimeout(() => {
+             setStatus('connected');
+             onUpdate(connection.id, { lastConnected: Date.now() });
+             setTimeout(() => setStatus('idle'), 3000);
+           }, 1500);
+         };
 
         return (
           <div className="card-bg p-6 rounded-[2.5rem] shadow-sm hover:shadow-xl transition-all relative group overflow-hidden">
@@ -397,17 +400,17 @@
         );
       };
 
-      const ConnectionList = ({ type, connections, onAdd, onDelete, onUpdate, identities = [] }) => {
-        const [editingId, setEditingId] = useState(null);
-        const [showModal, setShowModal] = useState(false);
-        const [collapsedGroups, setCollapsedGroups] = useState({});
-        const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
+const ConnectionList = ({ type, connections, onAdd, onDelete, onUpdate, identities = [] }) => {
+         const [editingId, setEditingId] = useState(null);
+         const [showModal, setShowModal] = useState(false);
+         const [collapsedGroups, setCollapsedGroups] = useState({});
+         const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', domain: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
 
-        const openNew = () => {
-          setEditingId(null);
-          setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
-          setShowModal(true);
-        };
+const openNew = () => {
+           setEditingId(null);
+           setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', domain: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
+           setShowModal(true);
+         };
 
         const openEdit = (c) => {
           setEditingId(c.id);
@@ -526,6 +529,12 @@
                         </div>
                       </>
                     )}
+                    {type === 'RDP' && !formData.identityId && (
+                      <div className="col-span-1">
+                        <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Domain (Optional)</label>
+                        <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.domain || ''} placeholder="CORP" onChange={e => setFormData({...formData, domain: e.target.value})} />
+                      </div>
+                    )}
                     {type === 'VPN' && (
                       <div className="col-span-2 flex items-center gap-4 p-6 card-bg rounded-3xl border-2">
                         <input type="checkbox" id="sso-toggle" className="w-6 h-6 accent-indigo-600 rounded cursor-pointer" checked={!!formData.sso} onChange={e => setFormData({...formData, sso: e.target.checked})} />
@@ -544,16 +553,16 @@
         );
       };
 
-      const VaultManager = ({ identities = [], onUpdate }) => {
-        const [showModal, setShowModal] = useState(false);
-        const [formData, setFormData] = useState({ name: '', username: '', password: '' });
+const VaultManager = ({ identities = [], onUpdate }) => {
+         const [showModal, setShowModal] = useState(false);
+         const [formData, setFormData] = useState({ name: '', username: '', password: '', domain: '' });
 
-        const handleSave = () => {
-          if (!formData.name || !formData.username) return;
-          onUpdate([...identities, { ...formData, id: Date.now().toString() }]);
-          setShowModal(false);
-          setFormData({ name: '', username: '', password: '' });
-        };
+         const handleSave = () => {
+           if (!formData.name || !formData.username) return;
+           onUpdate([...identities, { ...formData, id: Date.now().toString() }]);
+           setShowModal(false);
+           setFormData({ name: '', username: '', password: '', domain: '' });
+         };
 
         const remove = (id) => onUpdate(identities.filter(i => i.id !== id));
 
@@ -590,14 +599,18 @@
                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Profile Name</label>
                       <input className="w-full p-6 rounded-2xl custom-input outline-none focus:ring-4" value={formData.name} placeholder="e.g. Domain Admin" onChange={e => setFormData({...formData, name: e.target.value})} />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Username</label>
-                      <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.username} placeholder="admin_user" onChange={e => setFormData({...formData, username: e.target.value})} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Password</label>
-                      <input type="password" className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.password} placeholder="••••••••" onChange={e => setFormData({...formData, password: e.target.value})} />
-                    </div>
+<div>
+                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Username</label>
+                       <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.username} placeholder="admin_user" onChange={e => setFormData({...formData, username: e.target.value})} />
+                     </div>
+                     <div>
+                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Domain (Optional)</label>
+                       <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.domain || ''} placeholder="CORP" onChange={e => setFormData({...formData, domain: e.target.value})} />
+                     </div>
+                     <div>
+                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Password</label>
+                       <input type="password" className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.password} placeholder="••••••••" onChange={e => setFormData({...formData, password: e.target.value})} />
+                     </div>
                   </div>
                   <div className="flex justify-end gap-6 mt-12">
                     <button onClick={() => setShowModal(false)} className="px-10 py-4 font-black uppercase text-xs text-contrast">Abort</button>

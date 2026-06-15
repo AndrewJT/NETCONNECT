@@ -41,28 +41,30 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({ connection, onDe
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected'>('idle');
 
-  const handleConnect = () => {
-    setStatus('connecting');
-    if ((window as any).pywebview) {
-      if (connection.type === ConnectionType.RDP) {
-        (window as any).pywebview.api.launch_rdp(
-          connection.host, 
-          credential?.username || 'Admin',
-          credential?.password || ''
-        );
-      } else {
-        (window as any).pywebview.api.toggle_vpn(connection.protocol, connection.host, false);
-      }
-    }
-    setTimeout(() => {
-      setStatus('connected');
-      onUpdate(connection.id, { lastConnected: Date.now() });
-      if (connection.type === ConnectionType.RDP && !(window as any).pywebview) {
-        generateRdpFile(connection, credential?.username);
-      }
-      setTimeout(() => setStatus('idle'), 4000);
-    }, 1200);
-  };
+const handleConnect = () => {
+     setStatus('connecting');
+     if ((window as any).pywebview) {
+       if (connection.type === ConnectionType.RDP) {
+         (window as any).pywebview.api.launch_rdp(
+           connection.host, 
+           credential?.username || 'Admin',
+           credential?.password || '',
+           credential?.domain || connection.domain || '',
+           connection.port || '3389'
+         );
+       } else {
+         (window as any).pywebview.api.toggle_vpn(connection.protocol, connection.host, false);
+       }
+     }
+     setTimeout(() => {
+       setStatus('connected');
+       onUpdate(connection.id, { lastConnected: Date.now() });
+       if (connection.type === ConnectionType.RDP && !(window as any).pywebview) {
+         generateRdpFile(connection);
+       }
+       setTimeout(() => setStatus('idle'), 4000);
+     }, 1200);
+   };
 
   const askAi = async () => {
     setAiLoading(true);
@@ -87,7 +89,7 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({ connection, onDe
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)}></div>
               <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-20 py-2 animate-in fade-in slide-in-from-top-2">
-                <MenuOption onClick={() => { generateRdpFile(connection, credential?.username); setShowMenu(false); }} icon={<Download size={16} />} label="Export Config" />
+                <MenuOption onClick={() => { generateRdpFile(connection); setShowMenu(false); }} icon={<Download size={16} />} label="Export Config" />
                 <MenuOption onClick={askAi} icon={<BrainCircuit size={16} />} label="AI Troubleshoot" highlight />
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-2 mx-2"></div>
                 <MenuOption onClick={() => { onDelete?.(); setShowMenu(false); }} icon={<Trash2 size={16} />} label="Delete Profile" danger />

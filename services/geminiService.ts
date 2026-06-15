@@ -26,8 +26,14 @@ export const getSmartConfigHelp = async (connection: Connection) => {
   }
 };
 
-// Updated generateRdpFile to accept an optional username, defaulting to Administrator
-export const generateRdpFile = (connection: Connection, username: string = 'Administrator') => {
+// Updated generateRdpFile to accept optional username, domain, password, and port
+export const generateRdpFile = (connection: Connection) => {
+  const port = connection.port || '3389';
+  const fullAddress = port !== '3389' ? `${connection.host}:${port}` : connection.host;
+  const username = connection.username || '';
+  const domain = connection.domain || '';
+  const promptForCreds = (!username).toString().toLowerCase();
+
   const content = `
 screen mode id:i:2
 use multimon:i:0
@@ -35,14 +41,14 @@ desktopwidth:i:1920
 desktopheight:i:1080
 session bpp:i:32
 winposstr:s:0,3,0,0,800,600
-full address:s:${connection.host}
+full address:s:${fullAddress}
 compression:i:1
 keyboardhook:i:2
 audiocapturemode:i:0
 videoplaybackmode:i:1
 connection type:i:7
 displayconnectionbar:i:1
-username:s:${username}
+username:s:${domain ? `${domain}\\${username}` : username}
 shell working directory:s:
 disable wallpaper:i:1
 disable full window drag:i:1
@@ -58,7 +64,7 @@ redirectclipboard:i:1
 redirectposdevices:i:0
 autoreconnection enabled:i:1
 authentication level:i:2
-prompt for credentials:i:1
+prompt for credentials:i:${promptForCreds}
 negotiate security layer:i:1
 remoteapplicationmode:i:0
 alternate shell:s:
