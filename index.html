@@ -337,35 +337,33 @@ const normalizeCredentialProfile = (rawProfile, index, usedIds) => {
         const [status, setStatus] = useState('idle');
         const [showMenu, setShowMenu] = useState(false);
 
-const handleConnect = () => {
-           setStatus('connecting');
-           const win = window;
-           if (win.pywebview && win.pywebview.api) {
-             let user = connection.username;
-             let pass = connection.password;
-             let dom = connection.domain;
-             
-             if (connection.identityId) {
-               const iden = identities.find(i => i.id === connection.identityId);
-               if (iden) {
-                 user = iden.username;
-                 pass = iden.password;
-                 dom = iden.domain || dom;
-               }
-             }
+        const handleConnect = () => {
+          setStatus('connecting');
+          const win = window;
+          if (win.pywebview && win.pywebview.api) {
+            let user = connection.username;
+            let pass = connection.password;
+            
+            if (connection.identityId) {
+              const iden = identities.find(i => i.id === connection.identityId);
+              if (iden) {
+                user = iden.username;
+                pass = iden.password;
+              }
+            }
 
-             if (connection.type === 'RDP') {
-                win.pywebview.api.launch_rdp(connection.host, user || 'Admin', pass || '', dom || '', connection.port || '3389');
-              } else {
-               win.pywebview.api.toggle_vpn(connection.protocol, connection.host, false, !!connection.sso);
-             }
-           }
-           setTimeout(() => {
-             setStatus('connected');
-             onUpdate(connection.id, { lastConnected: Date.now() });
-             setTimeout(() => setStatus('idle'), 3000);
-           }, 1500);
-         };
+            if (connection.type === 'RDP') {
+              win.pywebview.api.launch_rdp(connection.host, user || 'Admin', pass || '');
+            } else {
+              win.pywebview.api.toggle_vpn(connection.protocol, connection.host, false, !!connection.sso, connection.gateway || '');
+            }
+          }
+          setTimeout(() => {
+            setStatus('connected');
+            onUpdate(connection.id, { lastConnected: Date.now() });
+            setTimeout(() => setStatus('idle'), 3000);
+          }, 1500);
+        };
 
         return (
           <div className="card-bg p-6 rounded-[2.5rem] shadow-sm hover:shadow-xl transition-all relative group overflow-hidden">
@@ -400,17 +398,17 @@ const handleConnect = () => {
         );
       };
 
-const ConnectionList = ({ type, connections, onAdd, onDelete, onUpdate, identities = [] }) => {
-         const [editingId, setEditingId] = useState(null);
-         const [showModal, setShowModal] = useState(false);
-         const [collapsedGroups, setCollapsedGroups] = useState({});
-         const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', domain: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
+      const ConnectionList = ({ type, connections, onAdd, onDelete, onUpdate, identities = [] }) => {
+        const [editingId, setEditingId] = useState(null);
+        const [showModal, setShowModal] = useState(false);
+        const [collapsedGroups, setCollapsedGroups] = useState({});
+        const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', gateway: '', notes: [] });
 
-const openNew = () => {
-           setEditingId(null);
-           setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', domain: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
-           setShowModal(true);
-         };
+        const openNew = () => {
+          setEditingId(null);
+          setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', gateway: '', notes: [] });
+          setShowModal(true);
+        };
 
         const openEdit = (c) => {
           setEditingId(c.id);
@@ -512,11 +510,18 @@ const openNew = () => {
                           <option value="GlobalProtect">Palo Alto GlobalProtect</option>
                           <option value="AnyConnect">Cisco AnyConnect</option>
                           <option value="Citrix">Citrix Workspace</option>
+                          <option value="Parallels">Parallels Access</option>
                         </select>
                       ) : (
                         <input className="w-full p-6 rounded-2xl custom-input font-mono outline-none focus:ring-4" value={formData.port || ''} onChange={e => setFormData({...formData, port: e.target.value})} />
                       )}
                     </div>
+                    {type === 'VPN' && (
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Gateway / Portal (Optional)</label>
+                        <input className="w-full p-6 rounded-2xl custom-input font-mono outline-none focus:ring-4" value={formData.gateway || ''} placeholder="vpn.company.com" onChange={e => setFormData({...formData, gateway: e.target.value})} />
+                      </div>
+                    )}
                     {!formData.identityId && (
                       <>
                         <div className="col-span-1">

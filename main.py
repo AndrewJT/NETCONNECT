@@ -99,10 +99,12 @@ class NetConnectAPI:
             subprocess.run(['cmdkey', '/delete', credential_target], capture_output=True, check=False)
 
             if password:
+                port_str = f":{port}" if port and port !== '3389' else ""
+                targets = [host, f"TERMSRV/{host}{port_str}"]
                 user_display = f"{domain}\\{username}" if domain else username
-                subprocess.run(['cmdkey', '/add', credential_target, '/user', user_display, '/pass', password], capture_output=True, check=False)
-
-            subprocess.Popen(['mstsc', f'/v:{host}'])
+                for target in targets:
+                    subprocess.run(['cmdkey', '/add:' + target, '/user:' + user_display, '/pass:' + password], capture_output=True, check=False)
+            subprocess.Popen(['mstsc', f'/v:{host}{port_str}' if port_str else f'/v:{host}'])
             return True
         except Exception as e:
             print(f"[Engine] Native RDP Error: {e}")
@@ -112,11 +114,11 @@ class NetConnectAPI:
                 pass
             return False
 
-    def toggle_vpn(self, protocol, host, disconnect=False, sso=False):
+    def toggle_vpn(self, protocol, host, disconnect=False, sso=False, gateway=''):
         """Orchestrates different VPN client binaries based on protocol."""
         try:
             action = "disconnect" if disconnect else "connect"
-            print(f"[Engine] Toggling {protocol} for {host} (Action: {action}, SSO: {sso})")
+            print(f"[Engine] Toggling {protocol} for {host} (Action: {action}, SSO: {sso}, Gateway: {gateway})")
             
             if protocol == "FortiClient":
                 cli_paths = [
@@ -124,8 +126,9 @@ class NetConnectAPI:
                     r"C:\Program Files (x86)\Fortinet\FortiClient\FortiSSLVPNcli.exe"
                 ]
                 exe = next((p for p in cli_paths if os.path.exists(p)), None)
+                target = gateway or host
                 if exe and not sso:
-                    subprocess.Popen([exe, action, "-h", host])
+                    subprocess.Popen([exe, action, "-h", target])
                     return True
                 gui = r"C:\Program Files\Fortinet\FortiClient\FortiClient.exe"
                 if os.path.exists(gui):
@@ -139,13 +142,38 @@ class NetConnectAPI:
                     subprocess.Popen([exe, "--command", cmd_action, host])
                     return True
 
-            elif protocol == "Palo Alto GlobalProtect":
-                exe = r"C:\Program Files\Palo Alto Networks\GlobalProtect\PanGPA.exe"
-                if os.path.exists(exe):
-                    subprocess.Popen([exe])
+            elif protocol == "GlobalProtect":
+                cli_paths = [
+                    r"C:\Program Files\Palo Alto Networks\GlobalProtect\GlobalProtect.exe",
+                    r"C:\Program Files\Palo Alto Networks\GlobalProtect\PanGPA.exe"
+                ]
+                cli_exe = next((p for p in cli_paths if os.path.exists(p)), None)
+                target = gateway or host
+                if cli_exe and not sso:
+                    subprocess.Popen([cli_exe, "--connect", "--portal", target])
+                    return True
+                gui_paths = [
+                    r"C:\Program Files\Palo Alto Networks\GlobalProtect\GlobalProtect.exe",
+                    r"C:\Program Files\Palo Alto Networks\GlobalProtect\PanGPA.exe"
+                ]
+                gui = next((p for p in gui_paths if os.path.exists(p)), None)
+                if gui:
+                    subprocess.Popen([gui])
                     return True
 
-            elif protocol == "Cisco AnyConnect":
+            elif protocol == "AnyConnect":
+                cli_paths = [
+                    r"C:\Program Files (x86)\Cisco\Cisco AnyConnect Secure Mobility Client\vpn.exe",
+                    r"C:\Program Files (x86)\Cisco\Cisco Secure Client\vpn.exe"
+                ]
+                cli_exe = next((p for p in cli_paths if os.path.exists(p)), None)
+                target = gateway or host
+                if cli_exe and not sso:
+                    if disconnect:
+                        subprocess.Popen([cli_exe, "disconnect"])
+                    else:
+                        subprocess.Popen([cli_exe, "connect", target])
+                    return True
                 exe_paths = [
                     r"C:\Program Files (x86)\Cisco\Cisco AnyConnect Secure Mobility Client\vpnui.exe",
                     r"C:\Program Files (x86)\Cisco\Cisco Secure Client\vpnui.exe"
@@ -157,6 +185,12 @@ class NetConnectAPI:
 
             elif protocol == "Citrix":
                 exe = r"C:\Program Files (x86)\Citrix\ICA Client\SelfServicePlugin\SelfService.exe"
+                if os.path.exists(exe):
+                    subprocess.Popen([exe])
+                    return True
+
+            elif protocol == "Parallels":
+                exe = r"C:\Program Files (x86)\Parallels\Parallels Access\prl_client_app.exe"
                 if os.path.exists(exe):
                     subprocess.Popen([exe])
                     return True
