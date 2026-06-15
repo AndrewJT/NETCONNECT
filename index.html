@@ -129,6 +129,209 @@
         Zap, Activity, Clock, MoreVertical, Database, Info, ChevronRight, Save, User, KeyRound, RefreshCw, ChevronDown, Download, Upload
       } from 'lucide-react';
 
+      const CONFIG_SCHEMA_VERSION = 1;
+      const CONFIG_STORAGE_KEY = 'netconnect_pro_master_config';
+
+      // The Python bridge still exchanges raw JSON strings. These helpers keep
+      // that load_config/save_config contract stable while normalizing legacy
+      // ~/.netconnect_pro.json and localStorage payloads into the current schema.
+      const asObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      const asArray = (value) => Array.isArray(value) ? value : [];
+      const asString = (value, fallback = '') => typeof value === 'string' ? value : fallback;
+      const asBoolean = (value, fallback) => typeof value === 'boolean' ? value : fallback;
+      const asNumber = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+      const slugify = (value) => asString(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'folder';
+      const uniqueId = (base, usedIds) => {
+        const fallback = base || `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        let next = fallback;
+        let index = 2;
+        while (usedIds.has(next)) {
+          next = `${fallback}-${index}`;
+          index += 1;
+        }
+        usedIds.add(next);
+        return next;
+      };
+
+      const normalizeCredentialProfile = (rawProfile, index, usedIds) => {
+        const profile = asObject(rawProfile);
+        const id = uniqueId(asString(profile.id, `identity-${index + 1}`), usedIds);
+        return {
+          ...profile,
+          id,
+          name: asString(profile.name, profile.username || `Identity ${index + 1}`),
+          username: asString(profile.username, ''),
+          createdAt: asNumber(profile.createdAt, Date.now()),
+          updatedAt: asNumber(profile.updatedAt, Date.now())
+        };
+      };
+
+      const normalizeFolder = (rawFolder, index, usedIds) => {
+        const folder = asObject(rawFolder);
+        const name = asString(folder.name, `Folder ${index + 1}`);
+        const id = uniqueId(asString(folder.id, `folder:${slugify(name)}`), usedIds);
+        return {
+          ...folder,
+          id,
+          name,
+          createdAt: asNumber(folder.createdAt, Date.now()),
+          updatedAt: asNumber(folder.updatedAt, Date.now())
+        };
+      };
+
+      const normalizeConnectionNote = (rawNote, index, connectionId, folderId, usedIds) => {
+        const note = asObject(rawNote);
+        const body = asString(note.body || note.text || note.content || note.note, '');
+        if (!body) return null;
+        const id = uniqueId(asString(note.id, `note-${connectionId || 'global'}-${index + 1}`), usedIds);
+        return {
+          ...note,
+          id,
+          body,
+          connectionId: asString(note.connectionId, connectionId || ''),
+          folderId: asString(note.folderId, folderId || ''),
+          createdAt: asNumber(note.createdAt, Date.now()),
+          updatedAt: asNumber(note.updatedAt, Date.now())
+        };
+      };
+
+      const normalizeConnectionNotes = (rawConnection, connectionId, folderId, usedNoteIds) => {
+        const notes = [];
+        asArray(rawConnection.notes).forEach((note, index) => {
+          const normalized = normalizeConnectionNote(note, index, connectionId, folderId, usedNoteIds);
+          if (normalized) notes.push(normalized);
+        });
+
+        const legacyNote = asString(rawConnection.note || rawConnection.notesText, '');
+        if (legacyNote && !notes.some(note => note.body === legacyNote)) {
+          const normalized = normalizeConnectionNote({ body: legacyNote }, notes.length, connectionId, folderId, usedNoteIds);
+          if (normalized) notes.push(normalized);
+        }
+
+        return notes;
+      };
+
+      const addFolder = (folders, byId, byName, usedIds, rawFolder) => {
+        const folder = normalizeFolder(rawFolder, folders.length, usedIds);
+        if (byId.has(folder.id)) return byId.get(folder.id);
+        if (byName.has(folder.name.toLowerCase())) return byName.get(folder.name.toLowerCase());
+        folders.push(folder);
+        byId.set(folder.id, folder);
+        byName.set(folder.name.toLowerCase(), folder);
+        return folder;
+      };
+
+      const normalizeFolders = (rawFolders, rawConnections, usedFolderIds) => {
+        const folders = [];
+        const byId = new Map();
+        const byName = new Map();
+
+        asArray(rawFolders).forEach(rawFolder => addFolder(folders, byId, byName, usedFolderIds, rawFolder));
+
+        rawConnections.forEach(rawConnection => {
+          const group = asString(rawConnection.group, '');
+          const folderId = asString(rawConnection.folderId, '');
+
+          if (folderId && !byId.has(folderId)) {
+            const folder = addFolder(folders, byId, byName, usedFolderIds, { id: folderId, name: folderId });
+            rawConnection.group = group || folder.name;
+            return;
+          }
+
+          if (group) {
+            const existing = byName.get(group.toLowerCase());
+            if (existing) {
+              rawConnection.folderId = rawConnection.folderId || existing.id;
+            } else {
+              const folder = addFolder(folders, byId, byName, usedFolderIds, { id: `folder:${slugify(group)}`, name: group });
+              rawConnection.folderId = rawConnection.folderId || folder.id;
+            }
+          } else if (folderId) {
+            const folder = byId.get(folderId);
+            if (folder) rawConnection.group = folder.name;
+          }
+        });
+
+        return folders;
+      };
+
+      const normalizeConnection = (rawConnection, index, folderById, usedConnectionIds, usedNoteIds) => {
+        const connection = asObject(rawConnection);
+        const id = uniqueId(asString(connection.id, `connection-${index + 1}`), usedConnectionIds);
+        const type = connection.type === 'VPN' ? 'VPN' : 'RDP';
+        const folderId = asString(connection.folderId, '');
+        const folder = folderId ? folderById.get(folderId) : null;
+        const group = asString(connection.group, folder ? folder.name : '');
+        const notes = normalizeConnectionNotes(connection, id, folder ? folder.id : '', usedNoteIds);
+
+        return {
+          ...connection,
+          id,
+          name: asString(connection.name, connection.host || `Connection ${index + 1}`),
+          type,
+          host: asString(connection.host, ''),
+          port: asString(connection.port, type === 'RDP' ? '3389' : '443'),
+          group,
+          folderId,
+          username: asString(connection.username, ''),
+          password: connection.password,
+          sso: asBoolean(connection.sso, false),
+          lastConnected: asNumber(connection.lastConnected, 0),
+          protocol: asString(connection.protocol, type === 'VPN' ? 'FortiClient' : ''),
+          domain: asString(connection.domain, ''),
+          icon: asString(connection.icon, type === 'RDP' ? 'server' : 'shield'),
+          identityId: asString(connection.identityId || connection.credentialId, ''),
+          credentialId: asString(connection.credentialId || connection.identityId, ''),
+          gateway: asString(connection.gateway, ''),
+          notes,
+          createdAt: asNumber(connection.createdAt, Date.now()),
+          updatedAt: asNumber(connection.updatedAt, Date.now())
+        };
+      };
+
+      const normalizeNotes = (rawNotes, connections, usedNoteIds) => {
+        const notes = [];
+        const byId = new Map();
+        const addNote = (note) => {
+          if (!note || !note.body) return;
+          if (byId.has(note.id)) {
+            byId.set(note.id, note);
+          } else {
+            byId.set(note.id, note);
+            notes.push(note);
+          }
+        };
+
+        asArray(rawNotes).forEach((rawNote, index) => addNote(normalizeConnectionNote(rawNote, index, '', '', usedNoteIds)));
+        connections.forEach(connection => asArray(connection.notes).forEach(addNote));
+        return notes;
+      };
+
+      const normalizeConfig = (rawConfig) => {
+        const config = asObject(rawConfig);
+        const rawConnections = asArray(config.connections).map(asObject);
+        const usedConnectionIds = new Set();
+        const usedIdentityIds = new Set();
+        const usedFolderIds = new Set();
+        const usedNoteIds = new Set();
+        const folders = normalizeFolders(config.folders, rawConnections, usedFolderIds);
+        const folderById = new Map(folders.map(folder => [folder.id, folder]));
+        const connections = rawConnections.map((connection, index) => normalizeConnection(connection, index, folderById, usedConnectionIds, usedNoteIds));
+        const identities = asArray(config.identities).map((identity, index) => normalizeCredentialProfile(identity, index, usedIdentityIds));
+        const notes = normalizeNotes(config.notes, connections, usedNoteIds);
+
+        return {
+          version: CONFIG_SCHEMA_VERSION,
+          theme: config.theme === 'light' ? 'light' : 'dark',
+          connections,
+          identities,
+          folders,
+          notes,
+          pythonSync: config.pythonSync !== false,
+          showDevTools: !!config.showDevTools
+        };
+      };
+
       const ConnectionCard = ({ connection, onDelete, onUpdate, onEdit, identities = [] }) => {
         const [status, setStatus] = useState('idle');
         const [showMenu, setShowMenu] = useState(false);
@@ -198,11 +401,11 @@
         const [editingId, setEditingId] = useState(null);
         const [showModal, setShowModal] = useState(false);
         const [collapsedGroups, setCollapsedGroups] = useState({});
-        const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', identityId: '' });
+        const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
 
         const openNew = () => {
           setEditingId(null);
-          setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', identityId: '' });
+          setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
           setShowModal(true);
         };
 
@@ -424,7 +627,7 @@
             if (raw) {
               try {
                 const p = JSON.parse(raw);
-                if (p && p.connections) onUpdate(p);
+                if (p) onUpdate(normalizeConfig(p));
               } catch (e) { alert("Invalid backup file format."); }
             }
           }
@@ -434,7 +637,7 @@
           if (confirm("WARNING: This will delete ALL stored profiles and credentials permanently. Proceed?")) {
             if (window.pywebview?.api) {
               await window.pywebview.api.wipe_config();
-              localStorage.removeItem('netconnect_pro_master_config');
+              localStorage.removeItem(CONFIG_STORAGE_KEY);
               window.location.reload();
             }
           }
@@ -511,37 +714,25 @@
         const [activeView, setActiveView] = useState('home');
         const [collapsed, setCollapsed] = useState(false);
         const [loaded, setLoaded] = useState(false);
-        // Corrected boolean to lowercase 'false'
-        const [config, setConfig] = useState({ theme: 'dark', connections: [], identities: [], pythonSync: true, showDevTools: false });
+        const [config, setConfig] = useState(normalizeConfig({ theme: 'dark', connections: [], identities: [], folders: [], notes: [], pythonSync: true, showDevTools: false }));
 
         useEffect(() => {
           const init = async () => {
             let initialData = null;
-            const local = localStorage.getItem('netconnect_pro_master_config');
+            const local = localStorage.getItem(CONFIG_STORAGE_KEY);
             if (local) {
-              try { initialData = JSON.parse(local); } catch (e) {}
+              try { initialData = normalizeConfig(JSON.parse(local)); } catch (e) {}
             }
 
             if (window.pywebview?.api) {
               setIsPython(true);
               try {
                 const res = await window.pywebview.api.load_config();
-                if (res) {
-                  const p = JSON.parse(res);
-                  if (p && p.connections) initialData = p;
-                }
+                if (res) initialData = normalizeConfig(JSON.parse(res));
               } catch (e) { console.error("[Engine] Initial Load Failed:", e); }
             }
 
-            if (initialData) {
-              setConfig({
-                theme: initialData.theme || 'dark',
-                connections: initialData.connections || [],
-                identities: initialData.identities || [],
-                pythonSync: initialData.pythonSync !== undefined ? initialData.pythonSync : true,
-                showDevTools: !!initialData.showDevTools
-              });
-            }
+            setConfig(initialData || normalizeConfig({ theme: 'dark', connections: [], identities: [], folders: [], notes: [], pythonSync: true, showDevTools: false }));
             setLoaded(true);
           };
           
@@ -552,15 +743,16 @@
         useEffect(() => {
           if (!loaded) return; 
 
-          localStorage.setItem('netconnect_pro_master_config', JSON.stringify(config));
-          document.documentElement.className = config.theme;
+          const persistedConfig = normalizeConfig(config);
+          localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(persistedConfig));
+          document.documentElement.className = persistedConfig.theme;
           
-          if (isPython && config.pythonSync && window.pywebview?.api) {
-            window.pywebview.api.save_config(JSON.stringify(config));
+          if (isPython && persistedConfig.pythonSync && window.pywebview?.api) {
+            window.pywebview.api.save_config(JSON.stringify(persistedConfig));
           }
         }, [config, isPython, loaded]);
 
-        const update = (up) => setConfig(prev => ({ ...prev, ...up }));
+        const update = (up) => setConfig(prev => normalizeConfig({ ...prev, ...up }));
 
         if (!loaded) {
           return <div className="loading-screen"><div className="spinner"></div><p className="mt-4 font-black uppercase text-[10px] tracking-[4px]">Initializing Vault...</p></div>;
