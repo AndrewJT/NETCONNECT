@@ -354,7 +354,7 @@
             if (connection.type === 'RDP') {
               win.pywebview.api.launch_rdp(connection.host, user || 'Admin', pass || '');
             } else {
-              win.pywebview.api.toggle_vpn(connection.protocol, connection.host, false, !!connection.sso);
+              win.pywebview.api.toggle_vpn(connection.protocol, connection.host, false, !!connection.sso, connection.gateway || '');
             }
           }
           setTimeout(() => {
@@ -401,11 +401,11 @@
         const [editingId, setEditingId] = useState(null);
         const [showModal, setShowModal] = useState(false);
         const [collapsedGroups, setCollapsedGroups] = useState({});
-        const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
+        const [formData, setFormData] = useState({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', gateway: '', notes: [] });
 
         const openNew = () => {
           setEditingId(null);
-          setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', notes: [] });
+          setFormData({ name: '', host: '', port: type === 'RDP' ? '3389' : '443', protocol: 'FortiClient', username: '', password: '', sso: false, group: '', folderId: '', identityId: '', gateway: '', notes: [] });
           setShowModal(true);
         };
 
@@ -509,11 +509,18 @@
                           <option value="GlobalProtect">Palo Alto GlobalProtect</option>
                           <option value="AnyConnect">Cisco AnyConnect</option>
                           <option value="Citrix">Citrix Workspace</option>
+                          <option value="Parallels">Parallels Access</option>
                         </select>
                       ) : (
                         <input className="w-full p-6 rounded-2xl custom-input font-mono outline-none focus:ring-4" value={formData.port || ''} onChange={e => setFormData({...formData, port: e.target.value})} />
                       )}
                     </div>
+                    {type === 'VPN' && (
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Gateway / Portal (Optional)</label>
+                        <input className="w-full p-6 rounded-2xl custom-input font-mono outline-none focus:ring-4" value={formData.gateway || ''} placeholder="vpn.company.com" onChange={e => setFormData({...formData, gateway: e.target.value})} />
+                      </div>
+                    )}
                     {!formData.identityId && (
                       <>
                         <div className="col-span-1">
