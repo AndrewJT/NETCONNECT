@@ -153,18 +153,19 @@
         return next;
       };
 
-      const normalizeCredentialProfile = (rawProfile, index, usedIds) => {
-        const profile = asObject(rawProfile);
-        const id = uniqueId(asString(profile.id, `identity-${index + 1}`), usedIds);
-        return {
-          ...profile,
-          id,
-          name: asString(profile.name, profile.username || `Identity ${index + 1}`),
-          username: asString(profile.username, ''),
-          createdAt: asNumber(profile.createdAt, Date.now()),
-          updatedAt: asNumber(profile.updatedAt, Date.now())
-        };
-      };
+const normalizeCredentialProfile = (rawProfile, index, usedIds) => {
+         const profile = asObject(rawProfile);
+         const id = uniqueId(asString(profile.id, `identity-${index + 1}`), usedIds);
+         return {
+           ...profile,
+           id,
+           name: asString(profile.name, profile.username || `Identity ${index + 1}`),
+           username: asString(profile.username, ''),
+           domain: asString(profile.domain, ''),
+           createdAt: asNumber(profile.createdAt, Date.now()),
+           updatedAt: asNumber(profile.updatedAt, Date.now())
+         };
+       };
 
       const normalizeFolder = (rawFolder, index, usedIds) => {
         const folder = asObject(rawFolder);
@@ -533,6 +534,12 @@
                         </div>
                       </>
                     )}
+                    {type === 'RDP' && !formData.identityId && (
+                      <div className="col-span-1">
+                        <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Domain (Optional)</label>
+                        <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.domain || ''} placeholder="CORP" onChange={e => setFormData({...formData, domain: e.target.value})} />
+                      </div>
+                    )}
                     {type === 'VPN' && (
                       <div className="col-span-2 flex items-center gap-4 p-6 card-bg rounded-3xl border-2">
                         <input type="checkbox" id="sso-toggle" className="w-6 h-6 accent-indigo-600 rounded cursor-pointer" checked={!!formData.sso} onChange={e => setFormData({...formData, sso: e.target.checked})} />
@@ -551,16 +558,16 @@
         );
       };
 
-      const VaultManager = ({ identities = [], onUpdate }) => {
-        const [showModal, setShowModal] = useState(false);
-        const [formData, setFormData] = useState({ name: '', username: '', password: '' });
+const VaultManager = ({ identities = [], onUpdate }) => {
+         const [showModal, setShowModal] = useState(false);
+         const [formData, setFormData] = useState({ name: '', username: '', password: '', domain: '' });
 
-        const handleSave = () => {
-          if (!formData.name || !formData.username) return;
-          onUpdate([...identities, { ...formData, id: Date.now().toString() }]);
-          setShowModal(false);
-          setFormData({ name: '', username: '', password: '' });
-        };
+         const handleSave = () => {
+           if (!formData.name || !formData.username) return;
+           onUpdate([...identities, { ...formData, id: Date.now().toString() }]);
+           setShowModal(false);
+           setFormData({ name: '', username: '', password: '', domain: '' });
+         };
 
         const remove = (id) => onUpdate(identities.filter(i => i.id !== id));
 
@@ -597,14 +604,18 @@
                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Profile Name</label>
                       <input className="w-full p-6 rounded-2xl custom-input outline-none focus:ring-4" value={formData.name} placeholder="e.g. Domain Admin" onChange={e => setFormData({...formData, name: e.target.value})} />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Username</label>
-                      <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.username} placeholder="admin_user" onChange={e => setFormData({...formData, username: e.target.value})} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Password</label>
-                      <input type="password" className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.password} placeholder="••••••••" onChange={e => setFormData({...formData, password: e.target.value})} />
-                    </div>
+<div>
+                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Username</label>
+                       <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.username} placeholder="admin_user" onChange={e => setFormData({...formData, username: e.target.value})} />
+                     </div>
+                     <div>
+                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Domain (Optional)</label>
+                       <input className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.domain || ''} placeholder="CORP" onChange={e => setFormData({...formData, domain: e.target.value})} />
+                     </div>
+                     <div>
+                       <label className="text-[10px] font-black uppercase text-sub mb-2 block tracking-widest">Password</label>
+                       <input type="password" className="w-full p-6 rounded-2xl custom-input font-bold outline-none focus:ring-4" value={formData.password} placeholder="••••••••" onChange={e => setFormData({...formData, password: e.target.value})} />
+                     </div>
                   </div>
                   <div className="flex justify-end gap-6 mt-12">
                     <button onClick={() => setShowModal(false)} className="px-10 py-4 font-black uppercase text-xs text-contrast">Abort</button>

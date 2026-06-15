@@ -93,6 +93,11 @@ class NetConnectAPI:
     def launch_rdp(self, host, username, password, domain='', port='3389'):
         """Launches Windows MSTSC and injects credentials into the store temporarily."""
         try:
+            credential_target = f"TERMSRV/{host}:{port}" if port and port != '3389' else f"TERMSRV/{host}"
+
+            subprocess.run(['cmdkey', '/delete', host], capture_output=True, check=False)
+            subprocess.run(['cmdkey', '/delete', credential_target], capture_output=True, check=False)
+
             if password:
                 port_str = f":{port}" if port and port !== '3389' else ""
                 targets = [host, f"TERMSRV/{host}{port_str}"]
